@@ -60,8 +60,11 @@ async function setDebounceTimer(phoneNumber: string): Promise<void> {
 // Send message helper
 async function sendTextMessage(phoneNumber: string, text: string): Promise<void> {
     try {
+        const url = `https://graph.facebook.com/v21.0/${WA_PHONE_NUMBER_ID}/messages`;
+        console.log('Sending message to:', url);
+
         await axios.post(
-            `https://graph.facebook.com/v21.0/${WA_PHONE_NUMBER_ID}/messages`,
+            url,
             {
                 messaging_product: 'whatsapp',
                 recipient_type: 'individual',
@@ -77,8 +80,10 @@ async function sendTextMessage(phoneNumber: string, text: string): Promise<void>
             }
         );
         console.log(`Sent message to ${phoneNumber}`);
-    } catch (error) {
-        console.error('Error sending message:', error);
+        await kv.set('debug:last-action', `Sent message to ${phoneNumber}: ${text.substring(0, 20)}...`);
+    } catch (error: any) {
+        console.error('Error sending message:', error.response?.data || error.message);
+        await kv.set('debug:error-sending', JSON.stringify(error.response?.data || error.message));
     }
 }
 
@@ -107,10 +112,15 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
         try {
             const payload = req.body;
+
+            // DEBUG: Log last payload to KV
+            await kv.set('debug:last-payload', JSON.stringify(payload));
+            await kv.set('debug:last-timestamp', new Date().toISOString());
+
             console.log('Webhook received:', JSON.stringify(payload, null, 2));
 
             if (payload.object !== 'whatsapp_business_account') {
-                console.log('Not a WhatsApp webhook');
+                await kv.set('debug:status', 'Not a WhatsApp webhook');
                 return;
             }
 
@@ -119,16 +129,19 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     const messages = change.value?.messages || [];
                     const contacts = change.value?.contacts || [];
 
+                    if (messages.length === 0) {
+                        await kv.set('debug:status', 'No messages in payload');
+                    }
+
                     for (const message of messages) {
                         const phoneNumber = message.from;
                         const senderName = contacts[0]?.profile?.name || 'Unknown';
 
-                        console.log(`Message from ${phoneNumber} (${senderName}): type=${message.type}`);
+                        await kv.set('debug:last-sender', `${phoneNumber} (${senderName})`);
 
                         // Handle text messages
                         if (message.type === 'text' && message.text?.body) {
                             const text = message.text.body;
-                            console.log(`Text: ${text}`);
 
                             let session = await getSession(phoneNumber);
                             if (!session || session.status !== 'collecting') {
@@ -146,7 +159,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                         // Handle image messages
                         if (message.type === 'image' && message.image?.id) {
                             const mediaId = message.image.id;
-                            console.log(`Image received: ${mediaId}`);
 
                             let session = await getSession(phoneNumber);
                             if (!session || session.status !== 'collecting') {
@@ -171,8 +183,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
                     }
                 }
             }
-        } catch (error) {
+        } catch (error: any) {
             console.error('Error processing webhook:', error);
+            await kv.set('debug:error', error.message || String(error));
         }
 
         return;
