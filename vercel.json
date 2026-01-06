@@ -1,0 +1,31 @@
+{
+    "version": 2,
+    "buildCommand": "npm run build",
+    "installCommand": "npm install",
+    "framework": null,
+    "functions": {
+        "api/**/*.ts": {
+            "runtime": "@vercel/node@3"
+        }
+    },
+    "routes": [
+        {
+            "src": "/webhook",
+            "dest": "/api/webhook"
+        },
+        {
+            "src": "/health",
+            "dest": "/api/health"
+        },
+        {
+            "src": "/cron/process",
+            "dest": "/api/cron/process"
+        }
+    ],
+    "crons": [
+        {
+            "path": "/api/cron/process",
+            "schedule": "* * * * *"
+        }
+    ]
+}
