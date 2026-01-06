@@ -9,18 +9,20 @@ const envSchema = z.object({
     WA_VERIFY_TOKEN: z.string().min(1, 'WhatsApp Verify Token is required'),
     WA_ACCESS_TOKEN: z.string().min(1, 'WhatsApp Access Token is required'),
 
-    // Redis
-    REDIS_URL: z.string().default('redis://localhost:6379'),
+    // Vercel KV (auto-injected by Vercel when you create KV storage)
+    // These are optional because @vercel/kv reads them automatically
+    KV_REST_API_URL: z.string().optional(),
+    KV_REST_API_TOKEN: z.string().optional(),
 
     // Google AI
     GOOGLE_API_KEY: z.string().min(1, 'Google API Key is required'),
 
-    // Cloudinary (inherited from @repo/storage)
+    // Cloudinary
     CLOUDINARY_CLOUD_NAME: z.string().min(1, 'Cloudinary Cloud Name is required'),
     CLOUDINARY_API_KEY: z.string().min(1, 'Cloudinary API Key is required'),
     CLOUDINARY_API_SECRET: z.string().min(1, 'Cloudinary API Secret is required'),
 
-    // Database (inherited from @repo/database)
+    // Database
     DATABASE_URL: z.string().min(1, 'Database URL is required'),
 });
 

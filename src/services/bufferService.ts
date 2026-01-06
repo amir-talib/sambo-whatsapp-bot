@@ -1,25 +1,18 @@
-import { getRedis } from '../config/redis.js';
+import { kv } from '@vercel/kv';
 import type { SessionData, SessionImage } from '../types/index.js';
 
 const SESSION_PREFIX = 'session:';
 const TIMER_PREFIX = 'timer:';
 const SESSION_TTL = 3600; // 1 hour max session lifetime
+const DEBOUNCE_TTL = 60; // 60 seconds debounce
 
 /**
  * Get or create a session for a phone number
  */
 export async function getSession(phoneNumber: string): Promise<SessionData | null> {
-    const redis = getRedis();
     const key = `${SESSION_PREFIX}${phoneNumber}`;
-
-    const data = await redis.get(key);
-    if (!data) return null;
-
-    try {
-        return JSON.parse(data) as SessionData;
-    } catch {
-        return null;
-    }
+    const data = await kv.get<SessionData>(key);
+    return data ?? null;
 }
 
 /**
@@ -38,14 +31,12 @@ export async function createSession(phoneNumber: string): Promise<SessionData> {
 }
 
 /**
- * Save session data to Redis
+ * Save session data to Vercel KV
  */
 export async function saveSession(phoneNumber: string, session: SessionData): Promise<void> {
-    const redis = getRedis();
     const key = `${SESSION_PREFIX}${phoneNumber}`;
-
     session.last_updated = Date.now();
-    await redis.setex(key, SESSION_TTL, JSON.stringify(session));
+    await kv.set(key, session, { ex: SESSION_TTL });
 }
 
 /**
@@ -98,11 +89,10 @@ export async function updateSessionStatus(
  * Clear session after completion or cancellation
  */
 export async function clearSession(phoneNumber: string): Promise<void> {
-    const redis = getRedis();
     const sessionKey = `${SESSION_PREFIX}${phoneNumber}`;
     const timerKey = `${TIMER_PREFIX}${phoneNumber}`;
 
-    await redis.del(sessionKey, timerKey);
+    await kv.del(sessionKey, timerKey);
 }
 
 /**
@@ -131,16 +121,12 @@ export async function setExtractedData(
     }
 }
 
-// Timer management using Redis TTL keys
-// The actual debounce is handled in the processor orchestrator
-
 /**
  * Check if processing timer exists for a phone number
  */
 export async function hasActiveTimer(phoneNumber: string): Promise<boolean> {
-    const redis = getRedis();
     const key = `${TIMER_PREFIX}${phoneNumber}`;
-    const exists = await redis.exists(key);
+    const exists = await kv.exists(key);
     return exists === 1;
 }
 
@@ -148,39 +134,32 @@ export async function hasActiveTimer(phoneNumber: string): Promise<boolean> {
  * Set/reset the processing timer (60 second debounce)
  */
 export async function setDebounceTimer(phoneNumber: string): Promise<void> {
-    const redis = getRedis();
     const key = `${TIMER_PREFIX}${phoneNumber}`;
-
-    // Set a marker that expires in 60 seconds
-    // When it expires, the processor should run
-    await redis.setex(key, 60, 'pending');
+    await kv.set(key, 'pending', { ex: DEBOUNCE_TTL });
 }
 
 /**
  * Clear the debounce timer
  */
 export async function clearDebounceTimer(phoneNumber: string): Promise<void> {
-    const redis = getRedis();
     const key = `${TIMER_PREFIX}${phoneNumber}`;
-    await redis.del(key);
+    await kv.del(key);
 }
 
 /**
- * Get all phone numbers with expired timers (for cleanup/polling)
+ * Get all phone numbers with expired timers (for cron processing)
  */
 export async function getExpiredTimerPhoneNumbers(): Promise<string[]> {
-    const redis = getRedis();
-
     // Get all session keys
-    const sessionKeys = await redis.keys(`${SESSION_PREFIX}*`);
+    const sessionKeys = await kv.keys(`${SESSION_PREFIX}*`);
     const expiredPhones: string[] = [];
 
     for (const sessionKey of sessionKeys) {
         const phoneNumber = sessionKey.replace(SESSION_PREFIX, '');
         const timerKey = `${TIMER_PREFIX}${phoneNumber}`;
 
-        // If session exists but timer doesn't, it's expired
-        const timerExists = await redis.exists(timerKey);
+        // If session exists but timer doesn't (expired), it's ready to process
+        const timerExists = await kv.exists(timerKey);
         if (timerExists === 0) {
             const session = await getSession(phoneNumber);
             if (session && session.status === 'collecting' && session.images.length > 0) {

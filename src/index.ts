@@ -1,7 +1,6 @@
 import express from 'express';
 import cors from 'cors';
 import { loadEnv, getEnv } from './config/env.js';
-import { connectRedis, closeRedis } from './config/redis.js';
 import { configureCloudinary } from './config/cloudinary.js';
 import { verifyWebhook, handleWebhook } from './controllers/webhookController.js';
 import { pollExpiredSessions } from './services/processorService.js';
@@ -34,27 +33,17 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
     res.status(500).json({ error: 'Internal server error' });
 });
 
-// Graceful shutdown
-async function shutdown() {
-    console.log('Shutting down...');
-    await closeRedis();
-    process.exit(0);
-}
-
-process.on('SIGTERM', shutdown);
-process.on('SIGINT', shutdown);
-
-// Start server
+// Start server (for local dev - Vercel uses api/ routes instead)
 async function start() {
     const env = getEnv();
 
     try {
         // Initialize services
-        await connectRedis();
         configureCloudinary();
 
-        // Start polling for expired sessions (every 5 seconds)
-        const POLL_INTERVAL = 5000;
+        // Start polling for expired sessions (every 60 seconds for local dev)
+        // On Vercel, cron handles this instead
+        const POLL_INTERVAL = 60000;
         setInterval(async () => {
             try {
                 await pollExpiredSessions();
@@ -68,6 +57,7 @@ async function start() {
             console.log(`🚀 WhatsApp Bot running on port ${env.PORT}`);
             console.log(`📍 Webhook URL: http://localhost:${env.PORT}/webhook`);
             console.log(`❤️  Health check: http://localhost:${env.PORT}/health`);
+            console.log(`\n⚠️  Note: For local dev, set KV_REST_API_URL and KV_REST_API_TOKEN`);
         });
 
     } catch (error) {
