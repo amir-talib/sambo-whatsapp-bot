@@ -1,11 +1,12 @@
 {
-    "name": "@sambo/whatsapp-bot",
+    "name": "sambo-whatsapp-bot",
     "version": "0.0.1",
     "private": true,
     "scripts": {
         "dev": "tsx watch src/index.ts",
-        "build": "tsc",
+        "build": "prisma generate && tsc",
         "start": "node dist/index.js",
+        "postinstall": "prisma generate",
         "test": "vitest run",
         "test:watch": "vitest",
         "lint": "eslint src/",
@@ -13,7 +14,7 @@
     },
     "dependencies": {
         "@google/generative-ai": "^0.21.0",
-        "@sambo/database": "*",
+        "@prisma/client": "^5.22.0",
         "@vercel/kv": "^3.0.0",
         "axios": "^1.7.9",
         "cloudinary": "^2.5.1",
@@ -22,11 +23,11 @@
         "zod": "^3.24.1"
     },
     "devDependencies": {
-        "@sambo/config": "*",
         "@types/cors": "^2.8.17",
         "@types/express": "^5.0.0",
         "@types/node": "^22.10.5",
         "@vercel/node": "^3.0.0",
+        "prisma": "^5.22.0",
         "tsx": "^4.19.2",
         "typescript": "^5.3.3",
         "vitest": "^2.1.8"

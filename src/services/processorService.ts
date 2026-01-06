@@ -1,4 +1,4 @@
-import { prisma } from '@sambo/database';
+import { prisma } from '../lib/prisma.js';
 import * as bufferService from './bufferService.js';
 import * as imageService from './imageService.js';
 import * as aiService from './aiService.js';

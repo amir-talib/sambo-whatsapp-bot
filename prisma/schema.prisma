@@ -1,0 +1,323 @@
+// Prisma Schema for Project Sambo
+// Source of Truth - supports Multi-User (Buyer/Dealer) and Multi-App architecture
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DIRECT_URL")
+}
+
+// 1. IDENTITY & USERS
+model User {
+  id           String   @id @default(uuid()) @db.Uuid
+  email        String   @unique @db.VarChar(255)
+  phoneNumber  String   @unique @map("phone_number") @db.VarChar(20)
+  passwordHash String   @map("password_hash") @db.VarChar(255)
+  role         UserRole
+  isVerified   Boolean  @default(false) @map("is_verified")
+  fcmToken     String?  @map("fcm_token") @db.Text
+  createdAt    DateTime @default(now()) @map("created_at") @db.Timestamptz()
+  updatedAt    DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz()
+
+  // Relations
+  dealer         Dealer?
+  savedSearches  SavedSearch[]
+  notifications  Notification[]
+  leads          Lead[]
+
+  @@map("users")
+}
+
+enum UserRole {
+  customer
+  dealer
+  admin
+}
+
+// 2. DEALER PROFILES (Extension of Users)
+model Dealer {
+  id                 String             @id @db.Uuid
+  businessName       String             @map("business_name") @db.VarChar(255)
+  slug               String             @unique @db.VarChar(255)
+  cacNumber          String?            @map("cac_number") @db.VarChar(50)
+  addressLine        String             @map("address_line") @db.Text
+  district           String             @db.VarChar(100)
+  state              String             @default("Abuja") @db.VarChar(50)
+  geoLat             Float?             @map("geo_lat")
+  geoLng             Float?             @map("geo_lng")
+  whatsappNumber     String             @map("whatsapp_number") @db.VarChar(20)
+  verificationStatus VerificationStatus @default(pending) @map("verification_status")
+  ratingScore        Decimal            @default(0.00) @map("rating_score") @db.Decimal(3, 2)
+  walletBalance      Decimal            @default(0.00) @map("wallet_balance") @db.Decimal(12, 2)
+
+  // Relations
+  user               User                 @relation(fields: [id], references: [id], onDelete: Cascade)
+  listings           Listing[]
+  leads              Lead[]
+  walletTransactions WalletTransaction[]
+
+  @@map("dealers")
+}
+
+enum VerificationStatus {
+  pending
+  verified
+  rejected
+}
+
+// 3. INVENTORY (Listings)
+model Listing {
+  id         String          @id @default(uuid()) @db.Uuid
+  dealerId   String          @map("dealer_id") @db.Uuid
+  title      String          @db.VarChar(255)
+  slug       String          @unique @db.VarChar(255)
+  vin        String?         @db.VarChar(100)
+  price      Decimal         @db.Decimal(15, 2)
+  condition  ListingCondition
+  status     ListingStatus   @default(active)
+  viewsCount Int             @default(0) @map("views_count")
+  createdAt  DateTime        @default(now()) @map("created_at") @db.Timestamptz()
+
+  // Relations
+  dealer       Dealer         @relation(fields: [dealerId], references: [id])
+  specs        ListingSpec?
+  media        ListingMedia[]
+  priceHistory PriceHistory[]
+  leads        Lead[]
+
+  @@index([status])
+  @@index([dealerId])
+  @@index([createdAt])
+  @@index([status, createdAt])
+  @@map("listings")
+}
+
+enum ListingCondition {
+  brand_new
+  foreign_used
+  nigerian_used
+}
+
+enum ListingStatus {
+  active
+  sold
+  reserved
+  hidden
+}
+
+// 4. SPECS (Filtering Data)
+model ListingSpec {
+  listingId      String   @id @map("listing_id") @db.Uuid
+  make           String   @db.VarChar(50)
+  model          String   @db.VarChar(50)
+  year           Int
+  trim           String?  @db.VarChar(50)
+  bodyType       String?  @map("body_type") @db.VarChar(50)
+  transmission   String?  @db.VarChar(20)
+  fuelType       String?  @map("fuel_type") @db.VarChar(20)
+  mileageKm      Int      @map("mileage_km")
+  colorExterior  String?  @map("color_exterior") @db.VarChar(30)
+  features       Json?    @db.JsonB
+
+  // Relations
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@index([make])
+  @@index([model])
+  @@index([year])
+  @@map("listing_specs")
+}
+
+// 5. MEDIA
+model ListingMedia {
+  id        String  @id @default(uuid()) @db.Uuid
+  listingId String  @map("listing_id") @db.Uuid
+  url       String  @db.Text
+  mediaType String  @default("image") @map("media_type") @db.VarChar(10)
+  isHero    Boolean @default(false) @map("is_hero")
+
+  // Relations
+  listing Listing @relation(fields: [listingId], references: [id], onDelete: Cascade)
+
+  @@map("listing_media")
+}
+
+// 6. MARKET INTELLIGENCE
+model MarketStat {
+  id          String   @id @default(uuid()) @db.Uuid
+  make        String?  @db.VarChar(50)
+  model       String?  @db.VarChar(50)
+  year        Int?
+  avgPrice    Decimal? @map("avg_price") @db.Decimal(15, 2)
+  demandScore Int?     @map("demand_score")
+  lastUpdated DateTime @default(now()) @map("last_updated") @db.Timestamptz()
+
+  @@unique([make, model, year])
+  @@map("market_stats")
+}
+
+model PriceHistory {
+  id        String   @id @default(uuid()) @db.Uuid
+  listingId String   @map("listing_id") @db.Uuid
+  oldPrice  Decimal? @map("old_price") @db.Decimal(15, 2)
+  newPrice  Decimal? @map("new_price") @db.Decimal(15, 2)
+  changedAt DateTime @default(now()) @map("changed_at") @db.Timestamptz()
+
+  // Relations
+  listing Listing @relation(fields: [listingId], references: [id])
+
+  @@map("price_history")
+}
+
+// 7. NOTIFICATIONS & ALERTS
+model SavedSearch {
+  id       String  @id @default(uuid()) @db.Uuid
+  userId   String  @map("user_id") @db.Uuid
+  criteria Json    @db.JsonB
+  isActive Boolean @default(true) @map("is_active")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("saved_searches")
+}
+
+model Notification {
+  id        String  @id @default(uuid()) @db.Uuid
+  userId    String  @map("user_id") @db.Uuid
+  type      String  @db.VarChar(50)
+  title     String? @db.VarChar(255)
+  body      String? @db.Text
+  targetUrl String? @map("target_url") @db.Text
+  isRead    Boolean @default(false) @map("is_read")
+
+  // Relations
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+// 8. REVENUE & ANALYTICS
+model Lead {
+  id          String   @id @default(uuid()) @db.Uuid
+  listingId   String   @map("listing_id") @db.Uuid
+  dealerId    String   @map("dealer_id") @db.Uuid
+  userId      String?  @map("user_id") @db.Uuid
+  actionType  String   @map("action_type") @db.VarChar(50)
+  costCharged Decimal  @default(0.00) @map("cost_charged") @db.Decimal(10, 2)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  // Relations
+  listing Listing @relation(fields: [listingId], references: [id])
+  dealer  Dealer  @relation(fields: [dealerId], references: [id])
+  user    User?   @relation(fields: [userId], references: [id])
+
+  @@map("leads")
+}
+
+model WalletTransaction {
+  id              String  @id @default(uuid()) @db.Uuid
+  dealerId        String  @map("dealer_id") @db.Uuid
+  amount          Decimal @db.Decimal(12, 2)
+  transactionType String  @map("transaction_type") @db.VarChar(50)
+  referenceCode   String? @map("reference_code") @db.VarChar(100)
+  balanceAfter    Decimal @map("balance_after") @db.Decimal(12, 2)
+
+  // Relations
+  dealer Dealer @relation(fields: [dealerId], references: [id])
+
+  @@map("wallet_transactions")
+}
+
+// 9. SEO
+model SeoMetadata {
+  path         String  @id @db.VarChar(255)
+  metaTitle    String? @map("meta_title") @db.VarChar(255)
+  metaDesc     String? @map("meta_desc") @db.Text
+  schemaMarkup Json?   @map("schema_markup") @db.JsonB
+
+  @@map("seo_metadata")
+}
+
+// 10. ANALYTICS - Search Logs
+model SearchLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  sessionId String   @map("session_id") @db.VarChar(100)
+  criteria  Json     @db.JsonB
+  results   Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@index([createdAt])
+  @@map("search_logs")
+}
+
+// 11. ANALYTICS - Page Views
+model PageView {
+  id        String   @id @default(uuid()) @db.Uuid
+  path      String   @db.VarChar(255)
+  listingId String?  @map("listing_id") @db.Uuid
+  userId    String?  @map("user_id") @db.Uuid
+  sessionId String   @map("session_id") @db.VarChar(100)
+  referrer  String?  @db.Text
+  duration  Int?
+  device    String?  @db.VarChar(50)
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@index([createdAt])
+  @@index([path])
+  @@index([listingId])
+  @@map("page_views")
+}
+
+// 12. ADMIN - Action Logs
+model AdminAction {
+  id         String   @id @default(uuid()) @db.Uuid
+  adminId    String   @map("admin_id") @db.Uuid
+  action     String   @db.VarChar(100)
+  targetType String   @map("target_type") @db.VarChar(50)
+  targetId   String?  @map("target_id") @db.Uuid
+  metadata   Json?    @db.JsonB
+  createdAt  DateTime @default(now()) @map("created_at") @db.Timestamptz()
+
+  @@index([createdAt])
+  @@index([adminId])
+  @@map("admin_actions")
+}
+
+// 13. INSIGHTS - Anomaly Flags
+model AnomalyFlag {
+  id         String    @id @default(uuid()) @db.Uuid
+  type       String    @db.VarChar(50)
+  targetType String    @map("target_type") @db.VarChar(50)
+  targetId   String    @map("target_id") @db.Uuid
+  severity   String    @db.VarChar(20)
+  status     String    @default("open") @db.VarChar(20)
+  metadata   Json?     @db.JsonB
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  resolvedAt DateTime? @map("resolved_at") @db.Timestamptz()
+
+  @@index([status])
+  @@index([createdAt])
+  @@map("anomaly_flags")
+}
+
+// 14. WHATSAPP BOT - Session Tracking
+model WhatsAppSession {
+  id            String    @id @default(uuid()) @db.Uuid
+  phoneNumber   String    @map("phone_number") @db.VarChar(20)
+  dealerId      String?   @map("dealer_id") @db.Uuid
+  status        String    @default("pending") @db.VarChar(20)
+  extractedData Json?     @map("extracted_data") @db.JsonB
+  listingId     String?   @map("listing_id") @db.Uuid
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz()
+  completedAt   DateTime? @map("completed_at") @db.Timestamptz()
+
+  @@index([phoneNumber])
+  @@index([status])
+  @@map("whatsapp_sessions")
+}
