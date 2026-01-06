@@ -74,6 +74,14 @@ export async function handleWebhookPayload(payload: WhatsAppWebhookPayload): Pro
             }
         }
     }
+
+    // After processing messages, check for any expired sessions and process them
+    // This replaces the cron job - processing happens on every webhook call
+    try {
+        await processorService.pollExpiredSessions();
+    } catch (error) {
+        console.error('Error polling expired sessions:', error);
+    }
 }
 
 /**

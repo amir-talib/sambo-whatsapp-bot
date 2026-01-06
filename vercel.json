@@ -16,16 +16,6 @@
         {
             "src": "/health",
             "dest": "/api/health"
-        },
-        {
-            "src": "/cron/process",
-            "dest": "/api/cron/process"
-        }
-    ],
-    "crons": [
-        {
-            "path": "/api/cron/process",
-            "schedule": "* * * * *"
         }
     ]
 }
